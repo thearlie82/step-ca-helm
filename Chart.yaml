@@ -1,0 +1,10 @@
+apiVersion: v2
+name: step-ca
+description: ADT umbrella chart for Smallstep step-ca on OpenShift (wraps upstream smallstep/step-certificates, adds a passthrough Route)
+type: application
+version: 0.1.0
+appVersion: "0.30.0"
+dependencies:
+  - name: step-certificates
+    version: 1.30.0
+    repository: https://smallstep.github.io/helm-charts/

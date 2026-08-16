@@ -1,0 +1,24 @@
+{{- if .Values.route.enabled }}
+# step-ca is itself a TLS endpoint (it serves the ACME/CA API over HTTPS on
+# :9000 with a cert signed by its own intermediate). The router must NOT
+# terminate or re-encrypt — it passes the raw TLS stream straight through so
+# clients validate against the step-ca root, not the router's cert.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: step-ca
+  labels:
+    app.kubernetes.io/name: step-ca
+spec:
+  host: {{ .Values.caHost }}
+  to:
+    kind: Service
+    # Upstream step-certificates names its Service after the release; this
+    # chart is installed as release "step-ca", so the Service is "step-ca".
+    name: step-ca
+  port:
+    targetPort: 443
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}

@@ -1,0 +1,66 @@
+# Default values. Per-environment overrides live in adt-grc-gitops:
+#   environments/step-ca/<env>/values.yaml
+
+# Hostname clients use to reach the CA. Must match a name in
+# step-certificates.ca.dns below so the CA issues itself a valid leaf.
+caHost: step-ca.apps.cluster.adt.network
+
+# OpenShift Route. step-ca terminates TLS itself (it is a CA), so the route
+# is PASSTHROUGH — the router forwards raw TLS to the pod on :9000. No
+# externalCertificate: the CA presents its own leaf signed by its root.
+route:
+  enabled: true
+
+# Upstream smallstep/step-certificates values.
+# See https://github.com/smallstep/helm-charts/blob/master/step-certificates/values.yaml
+step-certificates:
+  # Bootstrap runs once to create the PKI (root + intermediate) and the
+  # initial provisioner. For a throwaway TEST CA we let it auto-generate the
+  # CA and provisioner passwords into Secrets. For a real CA, supply
+  # ca.password / ca.provisioner.password out of band (never in git).
+  bootstrap:
+    enabled: true
+
+  ca:
+    name: "ADT Test CA"
+    # DNS SANs baked into the intermediate cert. Include the in-cluster
+    # service name and the external route host so both paths validate.
+    dns: "step-ca.step-ca.svc.cluster.local,step-ca.apps.cluster.adt.network"
+    address: ":9000"
+    url: "https://step-ca.apps.cluster.adt.network"
+
+    provisioner:
+      name: admin
+
+    # Persist the CA database (issued-cert index, revocations) on a PVC so a
+    # pod restart does not lose issuance history.
+    db:
+      enabled: true
+      persistent: true
+      size: 1Gi
+      accessModes:
+        - ReadWriteOnce
+      # storageClass: ""   # cluster default
+
+    # OpenShift restricted-v2 SCC: don't pin the container UID — let the
+    # namespace assign it. step-ca listens on 9000 (unprivileged) so it does
+    # not need NET_BIND_SERVICE.
+    containerSecurityContext:
+      runAsUser: null
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        add: []
+        drop: ["ALL"]
+      seccompProfile:
+        type: RuntimeDefault
+
+  service:
+    type: ClusterIP
+    port: 443
+    targetPort: 9000
+
+  # Pod-level: let OpenShift assign UID/GID/fsGroup from the namespace range.
+  podSecurityContext:
+    runAsUser: null
+    fsGroup: null
