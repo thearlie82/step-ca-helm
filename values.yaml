@@ -39,12 +39,14 @@ step-certificates:
     enabled: true
     image:
       repository: docker.io/smallstep/step-ca-bootstrap
-    # The bootstrap image runs as root (its USER is the non-numeric "root")
-    # and creates the CA's configmaps/secrets. anyuid permits it; disable the
-    # runAsNonRoot assertion for this container.
+    # Run as UID 1000 — the owner of /home/step (mode 2755) inside the image,
+    # so `step ca init` can create /home/step/{certs,secrets,db,config}.
+    # Running as root instead would need CAP_DAC_OVERRIDE to write that
+    # owner-only dir, but dropping ALL caps strips exactly that cap; UID 1000
+    # owns the dir outright and sidesteps the whole problem.
     containerSecurityContext:
-      runAsNonRoot: false
-      runAsUser: 0
+      runAsUser: 1000
+      runAsNonRoot: true
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: false
       capabilities:
