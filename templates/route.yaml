@@ -17,7 +17,12 @@ spec:
     # chart is installed as release "step-ca", so the Service is "step-ca".
     name: step-ca
   port:
-    targetPort: 443
+    # A Route's port.targetPort must reference the Service PORT's name (or its
+    # targetPort value) — NOT the service's port number. The step-certificates
+    # Service exposes port 443 named "https" targeting container 9000; pointing
+    # this at "443" leaves haproxy with no backend and drops the passthrough
+    # TLS handshake. Reference the named port instead.
+    targetPort: https
   tls:
     termination: passthrough
     insecureEdgeTerminationPolicy: Redirect
