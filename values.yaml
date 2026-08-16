@@ -14,12 +14,24 @@ route:
 # Upstream smallstep/step-certificates values.
 # See https://github.com/smallstep/helm-charts/blob/master/step-certificates/values.yaml
 step-certificates:
+  # Pin the resource names to "step-ca" so the Service the Route targets is
+  # "step-ca" (without this the subchart appends "-step-certificates").
+  fullnameOverride: step-ca
+
   # Bootstrap runs once to create the PKI (root + intermediate) and the
   # initial provisioner. For a throwaway TEST CA we let it auto-generate the
   # CA and provisioner passwords into Secrets. For a real CA, supply
   # ca.password / ca.provisioner.password out of band (never in git).
   bootstrap:
     enabled: true
+    # OpenShift restricted-v2 assigns the UID from the namespace range and
+    # rejects a hardcoded runAsUser. Null it so admission fills it in.
+    containerSecurityContext:
+      runAsUser: null
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: ["ALL"]
 
   ca:
     name: "ADT Test CA"
@@ -42,9 +54,17 @@ step-certificates:
         - ReadWriteOnce
       # storageClass: ""   # cluster default
 
-    # OpenShift restricted-v2 SCC: don't pin the container UID — let the
-    # namespace assign it. step-ca listens on 9000 (unprivileged) so it does
-    # not need NET_BIND_SERVICE.
+    # init container that runs `step ca init` — same SCC constraint.
+    init:
+      containerSecurityContext:
+        runAsUser: null
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+
+    # Main CA container. step-ca listens on 9000 (unprivileged), so it does
+    # NOT need NET_BIND_SERVICE — drop it. Null the UID for OpenShift.
     containerSecurityContext:
       runAsUser: null
       runAsNonRoot: true
@@ -52,8 +72,6 @@ step-certificates:
       capabilities:
         add: []
         drop: ["ALL"]
-      seccompProfile:
-        type: RuntimeDefault
 
   service:
     type: ClusterIP
@@ -63,4 +81,5 @@ step-certificates:
   # Pod-level: let OpenShift assign UID/GID/fsGroup from the namespace range.
   podSecurityContext:
     runAsUser: null
+    runAsGroup: null
     fsGroup: null
