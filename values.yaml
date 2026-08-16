@@ -39,6 +39,16 @@ step-certificates:
     enabled: true
     image:
       repository: docker.io/smallstep/step-ca-bootstrap
+    # The bootstrap image runs as root (its USER is the non-numeric "root")
+    # and creates the CA's configmaps/secrets. anyuid permits it; disable the
+    # runAsNonRoot assertion for this container.
+    containerSecurityContext:
+      runAsNonRoot: false
+      runAsUser: 0
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: false
+      capabilities:
+        drop: ["ALL"]
 
   ca:
     name: "ADT Test CA"
@@ -50,6 +60,26 @@ step-certificates:
 
     provisioner:
       name: admin
+
+    # The step-ca binary carries a NET_BIND_SERVICE file capability; the
+    # kernel refuses to exec a file-cap binary under no-new-privs, so
+    # allowPrivilegeEscalation MUST be true here. Runs as image UID 1000
+    # (owns /home/step) under anyuid.
+    containerSecurityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      allowPrivilegeEscalation: true
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: ["ALL"]
+        add: ["NET_BIND_SERVICE"]
+    init:
+      containerSecurityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
 
     # Persist the CA database (issued-cert index, revocations) on a PVC so a
     # pod restart does not lose issuance history.
