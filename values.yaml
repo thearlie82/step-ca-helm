@@ -11,6 +11,19 @@ caHost: step-ca.apps.cluster.adt.network
 route:
   enabled: true
 
+# step-ca runs as the image's built-in UID 1000: /home/step is owned by 1000,
+# and the step-ca binary carries a NET_BIND_SERVICE file capability that the
+# kernel refuses to exec under an arbitrary UID + no-new-privs. So instead of
+# forcing OpenShift's restricted-v2 arbitrary UID (which breaks both), grant
+# the pods' ServiceAccounts the anyuid SCC — the same pattern coder uses in
+# this cluster. This chart's templates/scc-anyuid.yaml binds it.
+scc:
+  # ServiceAccounts that need anyuid. "default" runs the CA StatefulSet pod;
+  # the bootstrap job runs as the chart-created "<fullname>-config" SA.
+  anyuidServiceAccounts:
+    - default
+    - step-ca-config
+
 # Upstream smallstep/step-certificates values.
 # See https://github.com/smallstep/helm-charts/blob/master/step-certificates/values.yaml
 step-certificates:
@@ -19,27 +32,13 @@ step-certificates:
   fullnameOverride: step-ca
 
   # This cluster cannot resolve cr.smallstep.com (the chart default registry);
-  # docker.io IS reachable and smallstep mirrors the images there. Pull from
-  # Docker Hub instead.
+  # docker.io IS reachable and smallstep mirrors the images there.
   image:
     repository: docker.io/smallstep/step-ca
-
-  # Bootstrap runs once to create the PKI (root + intermediate) and the
-  # initial provisioner. For a throwaway TEST CA we let it auto-generate the
-  # CA and provisioner passwords into Secrets. For a real CA, supply
-  # ca.password / ca.provisioner.password out of band (never in git).
   bootstrap:
     enabled: true
     image:
       repository: docker.io/smallstep/step-ca-bootstrap
-    # OpenShift restricted-v2 assigns the UID from the namespace range and
-    # rejects a hardcoded runAsUser. Null it so admission fills it in.
-    containerSecurityContext:
-      runAsUser: null
-      runAsNonRoot: true
-      allowPrivilegeEscalation: false
-      capabilities:
-        drop: ["ALL"]
 
   ca:
     name: "ADT Test CA"
@@ -62,32 +61,7 @@ step-certificates:
         - ReadWriteOnce
       # storageClass: ""   # cluster default
 
-    # init container that runs `step ca init` — same SCC constraint.
-    init:
-      containerSecurityContext:
-        runAsUser: null
-        runAsNonRoot: true
-        allowPrivilegeEscalation: false
-        capabilities:
-          drop: ["ALL"]
-
-    # Main CA container. step-ca listens on 9000 (unprivileged), so it does
-    # NOT need NET_BIND_SERVICE — drop it. Null the UID for OpenShift.
-    containerSecurityContext:
-      runAsUser: null
-      runAsNonRoot: true
-      allowPrivilegeEscalation: false
-      capabilities:
-        add: []
-        drop: ["ALL"]
-
   service:
     type: ClusterIP
     port: 443
     targetPort: 9000
-
-  # Pod-level: let OpenShift assign UID/GID/fsGroup from the namespace range.
-  podSecurityContext:
-    runAsUser: null
-    runAsGroup: null
-    fsGroup: null
