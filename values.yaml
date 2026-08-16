@@ -11,17 +11,16 @@ caHost: step-ca.apps.cluster.adt.network
 route:
   enabled: true
 
-# step-ca runs as the image's built-in UID 1000: /home/step is owned by 1000,
-# and the step-ca binary carries a NET_BIND_SERVICE file capability that the
-# kernel refuses to exec under an arbitrary UID + no-new-privs. So instead of
-# forcing OpenShift's restricted-v2 arbitrary UID (which breaks both), grant
-# the pods' ServiceAccounts the anyuid SCC — the same pattern coder uses in
-# this cluster. This chart's templates/scc-anyuid.yaml binds it.
+# SCC strategy (two different needs):
+#  - CA StatefulSet (SA "default"): runs fine under stock restricted-v2 — an
+#    arbitrary UID with NET_BIND_SERVICE added and privesc=false. Verified in
+#    cluster: the step-ca binary execs and serves. NO custom SCC needed; we
+#    just null the chart's hardcoded UID 1000 so restricted-v2 admits it.
+#  - Bootstrap Job (SA "step-ca-config"): must run as UID 1000 to write the
+#    image's owner-1000 /home/step, so it needs anyuid. Only that SA gets it.
 scc:
-  # ServiceAccounts that need anyuid. "default" runs the CA StatefulSet pod;
-  # the bootstrap job runs as the chart-created "<fullname>-config" SA.
+  # Only the bootstrap SA needs anyuid. The CA uses restricted-v2.
   anyuidServiceAccounts:
-    - default
     - step-ca-config
 
 # Upstream smallstep/step-certificates values.
@@ -63,21 +62,22 @@ step-certificates:
     provisioner:
       name: admin
 
-    # The step-ca binary carries a NET_BIND_SERVICE file capability; the
-    # kernel refuses to exec a file-cap binary under no-new-privs, so
-    # allowPrivilegeEscalation MUST be true here. Runs as image UID 1000
-    # (owns /home/step) under anyuid.
+    # restricted-v2 assigns an arbitrary UID from the namespace range; null the
+    # chart's hardcoded 1000 so admission fills it in. NET_BIND_SERVICE must be
+    # present in the bounding set for the file-cap binary to exec (verified:
+    # execs with privesc=false). The CA only writes /home/step/db (a PVC), so
+    # readOnlyRootFilesystem stays true.
     containerSecurityContext:
-      runAsUser: 1000
+      runAsUser: null
       runAsNonRoot: true
-      allowPrivilegeEscalation: true
+      allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
       capabilities:
         drop: ["ALL"]
         add: ["NET_BIND_SERVICE"]
     init:
       containerSecurityContext:
-        runAsUser: 1000
+        runAsUser: null
         runAsNonRoot: true
         allowPrivilegeEscalation: false
         capabilities:
@@ -97,3 +97,11 @@ step-certificates:
     type: ClusterIP
     port: 443
     targetPort: 9000
+
+  # Applies to both the CA and bootstrap pods. Null the chart's hardcoded
+  # 1000s: restricted-v2 (CA) rejects a pinned fsGroup/UID outside the
+  # namespace range, and anyuid (bootstrap) accepts RunAsAny either way.
+  podSecurityContext:
+    runAsUser: null
+    runAsGroup: null
+    fsGroup: null
