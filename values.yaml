@@ -18,12 +18,20 @@ step-certificates:
   # "step-ca" (without this the subchart appends "-step-certificates").
   fullnameOverride: step-ca
 
+  # This cluster cannot resolve cr.smallstep.com (the chart default registry);
+  # docker.io IS reachable and smallstep mirrors the images there. Pull from
+  # Docker Hub instead.
+  image:
+    repository: docker.io/smallstep/step-ca
+
   # Bootstrap runs once to create the PKI (root + intermediate) and the
   # initial provisioner. For a throwaway TEST CA we let it auto-generate the
   # CA and provisioner passwords into Secrets. For a real CA, supply
   # ca.password / ca.provisioner.password out of band (never in git).
   bootstrap:
     enabled: true
+    image:
+      repository: docker.io/smallstep/step-ca-bootstrap
     # OpenShift restricted-v2 assigns the UID from the namespace range and
     # rejects a hardcoded runAsUser. Null it so admission fills it in.
     containerSecurityContext:
